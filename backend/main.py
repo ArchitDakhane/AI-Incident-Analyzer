@@ -1,13 +1,16 @@
 """Application entry point."""
-import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
 
 from app.auth import router as auth_router
 from app.core import configure_logging, get_logger, settings
+from app.database.session import get_db
 from app.incidents import router as incidents_router
+from app.middleware.rate_limit import RateLimitMiddleware
+from app.services.dashboard import get_dashboard_stats
 
 # Configure logging before anything else
 configure_logging()
@@ -51,6 +54,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(RateLimitMiddleware, max_requests=60, window_seconds=60)
 
     app.include_router(auth_router)
     app.include_router(incidents_router)
@@ -70,6 +74,11 @@ def create_app() -> FastAPI:
             "version": settings.API_VERSION,
             "environment": settings.ENVIRONMENT,
         }
+
+    @app.get("/api/dashboard/stats", tags=["Dashboard"])
+    async def dashboard_stats(db: Session = Depends(get_db)) -> dict[str, int]:
+        """Return cached dashboard statistics for the UI."""
+        return get_dashboard_stats(db)
 
     logger.info("FastAPI application created successfully")
     return app

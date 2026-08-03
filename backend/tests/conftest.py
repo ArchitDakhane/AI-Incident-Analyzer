@@ -1,5 +1,21 @@
 """pytest configuration and fixtures."""
+import os
+
 import pytest
+
+os.environ["DEBUG"] = "False"
+
+
+@pytest.fixture(autouse=True)
+def reset_cache_service():
+    """Keep Redis-backed tests isolated from each other and local Redis state."""
+    from app.core.cache import InMemoryCache, cache_service
+
+    cache_service.fallback = InMemoryCache()
+    cache_service.client = InMemoryCache()
+    yield
+    cache_service.fallback = InMemoryCache()
+    cache_service.client = InMemoryCache()
 
 
 @pytest.fixture

@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
-from typing import Any
 
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
+from app.incidents.cache import invalidate_ai_report_cache
 from app.models.log_file import LogFile
 from app.utils.storage import save_upload
 
@@ -28,15 +27,19 @@ def create_log_file(db: Session, *, incident_id: int, file: UploadFile) -> LogFi
     db.add(log_file)
     db.commit()
     db.refresh(log_file)
+    invalidate_ai_report_cache(incident_id)
     return log_file
 
 
 def delete_log_file(db: Session, log_file: LogFile) -> None:
     """Remove an uploaded file from disk and database."""
+    incident_id = log_file.incident_id
     if log_file.file_path and os.path.exists(log_file.file_path):
         os.remove(log_file.file_path)
     db.delete(log_file)
     db.commit()
+    if incident_id is not None:
+        invalidate_ai_report_cache(incident_id)
 
 
 def delete_incident_files(db: Session, incident_id: int) -> None:

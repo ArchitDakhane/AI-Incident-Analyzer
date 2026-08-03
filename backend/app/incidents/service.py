@@ -9,8 +9,10 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceNotFoundException, ValidationException
+from app.incidents.cache import invalidate_ai_report_cache
 from app.models.incident import Incident
 from app.models.user import User
+from app.services.dashboard import invalidate_dashboard_cache
 
 
 def create_incident(db: Session, *, user: User, payload: dict[str, Any]) -> Incident:
@@ -31,6 +33,7 @@ def create_incident(db: Session, *, user: User, payload: dict[str, Any]) -> Inci
     db.add(incident)
     db.commit()
     db.refresh(incident)
+    invalidate_dashboard_cache()
     return incident
 
 
@@ -51,6 +54,8 @@ def update_incident(db: Session, incident_id: int, payload: dict[str, Any]) -> I
     incident.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(incident)
+    invalidate_dashboard_cache()
+    invalidate_ai_report_cache(incident.id)
     return incident
 
 
@@ -59,6 +64,8 @@ def delete_incident(db: Session, incident_id: int) -> None:
     incident = get_incident(db, incident_id)
     db.delete(incident)
     db.commit()
+    invalidate_dashboard_cache()
+    invalidate_ai_report_cache(incident_id)
 
 
 def list_incidents(

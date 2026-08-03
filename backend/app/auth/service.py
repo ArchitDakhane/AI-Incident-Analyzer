@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.exceptions import AuthenticationException, ConflictException, ValidationException
 from app.models.user import User
+from app.services.dashboard import invalidate_dashboard_cache
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
@@ -65,7 +66,14 @@ def authenticate_user(db: Session, email: str, password: str) -> User:
     return user
 
 
-def register_user(db: Session, *, email: str, username: str, password: str, full_name: str | None) -> User:
+def register_user(
+    db: Session,
+    *,
+    email: str,
+    username: str,
+    password: str,
+    full_name: str | None,
+) -> User:
     """Register a new user account."""
     existing_user = db.query(User).filter(
         (User.email == email) | (User.username == username)).first()
@@ -84,6 +92,7 @@ def register_user(db: Session, *, email: str, username: str, password: str, full
     db.add(user)
     db.commit()
     db.refresh(user)
+    invalidate_dashboard_cache()
     return user
 
 

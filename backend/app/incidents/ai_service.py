@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import json
-import os
-from typing import Any
 
 import httpx
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.exceptions import ServiceException, ValidationException
+from app.incidents.cache import (
+    cache_ai_report,
+    get_cached_ai_report,
+    invalidate_ai_report_cache,
+)
 from app.models.ai_report import AIReport
 from app.models.incident import Incident
 from app.models.user import User
+from app.services.dashboard import invalidate_dashboard_cache
 
 from .ai_schemas import AIReportPayload
 
@@ -39,7 +43,10 @@ def call_gemini_api(prompt: str, api_key: str) -> str:
     if not api_key or api_key == "your-gemini-api-key-here":
         raise ServiceException("Gemini API key is not configured")
 
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        "gemini-1.5-flash:generateContent"
+    )
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"responseMimeType": "application/json"},
@@ -78,8 +85,28 @@ def parse_ai_report_payload(raw_response: str) -> AIReportPayload:
             "Gemini response did not match the expected schema") from exc
 
 
+def _get_report_from_cache_marker(
+    db: Session,
+    incident_id: int,
+    cached_payload: object,
+) -> AIReport | None:
+    """Resolve a cached AI report marker back to the persisted report."""
+    query = db.query(AIReport).filter(AIReport.incident_id == incident_id)
+    if isinstance(cached_payload, dict) and cached_payload.get("id"):
+        query = query.filter(AIReport.id == int(cached_payload["id"]))
+
+    return query.order_by(AIReport.created_at.desc()).first()
+
+
 def create_ai_report(db: Session, *, incident: Incident, user: User | None = None) -> AIReport:
     """Generate a Gemini analysis for an incident and persist it."""
+    cached = get_cached_ai_report(incident.id)
+    if cached is not None:
+        cached_report = _get_report_from_cache_marker(db, incident.id, cached)
+        if cached_report is not None:
+            return cached_report
+        invalidate_ai_report_cache(incident.id)
+
     prompt = build_ai_report_prompt(incident)
     raw_response = call_gemini_api(prompt, settings.GEMINI_API_KEY)
     payload = parse_ai_report_payload(raw_response)
@@ -102,4 +129,17 @@ def create_ai_report(db: Session, *, incident: Incident, user: User | None = Non
     db.add(ai_report)
     db.commit()
     db.refresh(ai_report)
+    cache_ai_report(
+        incident.id,
+        {
+            "id": ai_report.id,
+            "incident_id": ai_report.incident_id,
+            "model_name": ai_report.model_name,
+            "analysis_type": ai_report.analysis_type,
+            "content": ai_report.content,
+            "confidence_score": ai_report.confidence_score,
+            "created_by_id": ai_report.created_by_id,
+        },
+    )
+    invalidate_dashboard_cache()
     return ai_report
