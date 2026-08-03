@@ -49,6 +49,6 @@ repos:
         types: [typescript, tsx]
         additional_dependencies:
           - eslint@8.53.0
-          - '@typescript-eslint/eslint-plugin'
-          - '@typescript-eslint/parser'
+          - "@typescript-eslint/eslint-plugin"
+          - "@typescript-eslint/parser"
         exclude: node_modules
