@@ -1,5 +1,6 @@
 """Incident routes."""
 
+import json
 import os
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -8,7 +9,10 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.auth.service import get_current_user
+from app.core.exceptions import AppException
 from app.database.session import get_db
+from app.incidents.ai_schemas import AIReportResponse
+from app.incidents.ai_service import create_ai_report
 from app.incidents.schemas import IncidentCreate, IncidentListResponse, IncidentResponse, IncidentUpdate
 from app.incidents.service import create_incident, delete_incident, get_incident, list_incidents, update_incident
 from app.incidents.upload_schemas import UploadResponse
@@ -200,6 +204,42 @@ def download_log_file_route(
         raise HTTPException(status_code=404, detail="File no longer exists")
 
     return FileResponse(log_file.file_path, filename=log_file.original_filename)
+
+
+@router.post("/{incident_id}/ai-report", response_model=AIReportResponse)
+def generate_ai_report_route(
+    incident_id: int,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    db: Session = Depends(get_db),
+) -> AIReportResponse:
+    """Generate an AI report for an incident from Gemini."""
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    user = get_current_user(db, credentials.credentials)
+    incident = get_incident(db, incident_id)
+    try:
+        ai_report = create_ai_report(db, incident=incident, user=user)
+    except AppException as exc:
+        raise HTTPException(status_code=exc.status_code,
+                            detail=exc.message) from exc
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    payload = ai_report.content
+    parsed_payload = json.loads(payload)
+    return AIReportResponse(
+        id=ai_report.id,
+        incident_id=ai_report.incident_id,
+        model_name=ai_report.model_name,
+        analysis_type=ai_report.analysis_type,
+        summary=parsed_payload["summary"],
+        findings=parsed_payload.get("findings", []),
+        recommended_actions=parsed_payload.get("recommended_actions", []),
+        confidence_score=ai_report.confidence_score,
+        created_at=ai_report.created_at.isoformat(),
+        created_by_id=ai_report.created_by_id,
+    )
 
 
 @router.delete("/{incident_id}", status_code=status.HTTP_204_NO_CONTENT)
