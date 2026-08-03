@@ -28,9 +28,12 @@ class Incident(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
-    incident_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    severity: Mapped[str] = mapped_column(String(50), nullable=False, default="medium")
-    status: Mapped[str] = mapped_column(String(50), nullable=False, default="open")
+    incident_type: Mapped[str | None] = mapped_column(
+        String(100), nullable=True)
+    severity: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="medium")
+    status: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="open")
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -53,5 +56,6 @@ class Incident(Base):
 
     created_by: Mapped[User | None] = relationship(back_populates="incidents")
     log_files: Mapped[list[LogFile]] = relationship(back_populates="incident")
-    ai_reports: Mapped[list[AIReport]] = relationship(back_populates="incident")
+    ai_reports: Mapped[list[AIReport]] = relationship(
+        back_populates="incident")
     comments: Mapped[list[Comment]] = relationship(back_populates="incident")

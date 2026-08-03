@@ -1,4 +1,5 @@
 """Alembic environment configuration."""
+from app.database.base import Base
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
@@ -17,7 +18,6 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-from app.database.base import Base
 from app.models import AIReport, Comment, Incident, LogFile, User  # noqa: F401
 
 target_metadata = Base.metadata
@@ -70,7 +70,8 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(connection=connection,
+                          target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()

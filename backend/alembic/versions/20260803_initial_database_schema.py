@@ -31,7 +31,8 @@ def upgrade() -> None:
     )
     op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
     op.create_index(op.f("ix_users_id"), "users", ["id"], unique=False)
-    op.create_index(op.f("ix_users_username"), "users", ["username"], unique=True)
+    op.create_index(op.f("ix_users_username"),
+                    "users", ["username"], unique=True)
 
     op.create_table(
         "incidents",
@@ -45,13 +46,17 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_by_id", sa.Integer(), nullable=True),
-        sa.ForeignKeyConstraint(["created_by_id"], ["users.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["created_by_id"], ["users.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_incidents_id"), "incidents", ["id"], unique=False)
-    op.create_index("ix_incidents_status", "incidents", ["status"], unique=False)
-    op.create_index("ix_incidents_severity", "incidents", ["severity"], unique=False)
-    op.create_index(op.f("ix_incidents_created_by_id"), "incidents", ["created_by_id"], unique=False)
+    op.create_index("ix_incidents_status", "incidents",
+                    ["status"], unique=False)
+    op.create_index("ix_incidents_severity", "incidents",
+                    ["severity"], unique=False)
+    op.create_index(op.f("ix_incidents_created_by_id"),
+                    "incidents", ["created_by_id"], unique=False)
 
     op.create_table(
         "log_files",
@@ -64,11 +69,13 @@ def upgrade() -> None:
         sa.Column("metadata", sa.Text(), nullable=True),
         sa.Column("uploaded_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("incident_id", sa.Integer(), nullable=True),
-        sa.ForeignKeyConstraint(["incident_id"], ["incidents.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["incident_id"], ["incidents.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_log_files_id"), "log_files", ["id"], unique=False)
-    op.create_index(op.f("ix_log_files_incident_id"), "log_files", ["incident_id"], unique=False)
+    op.create_index(op.f("ix_log_files_incident_id"),
+                    "log_files", ["incident_id"], unique=False)
 
     op.create_table(
         "ai_reports",
@@ -80,13 +87,18 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("incident_id", sa.Integer(), nullable=True),
         sa.Column("created_by_id", sa.Integer(), nullable=True),
-        sa.ForeignKeyConstraint(["incident_id"], ["incidents.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["created_by_id"], ["users.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["incident_id"], ["incidents.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["created_by_id"], ["users.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_ai_reports_id"), "ai_reports", ["id"], unique=False)
-    op.create_index(op.f("ix_ai_reports_incident_id"), "ai_reports", ["incident_id"], unique=False)
-    op.create_index(op.f("ix_ai_reports_created_by_id"), "ai_reports", ["created_by_id"], unique=False)
+    op.create_index(op.f("ix_ai_reports_id"),
+                    "ai_reports", ["id"], unique=False)
+    op.create_index(op.f("ix_ai_reports_incident_id"),
+                    "ai_reports", ["incident_id"], unique=False)
+    op.create_index(op.f("ix_ai_reports_created_by_id"),
+                    "ai_reports", ["created_by_id"], unique=False)
 
     op.create_table(
         "comments",
@@ -95,13 +107,17 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("incident_id", sa.Integer(), nullable=True),
         sa.Column("created_by_id", sa.Integer(), nullable=True),
-        sa.ForeignKeyConstraint(["incident_id"], ["incidents.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["created_by_id"], ["users.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["incident_id"], ["incidents.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["created_by_id"], ["users.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_comments_id"), "comments", ["id"], unique=False)
-    op.create_index(op.f("ix_comments_incident_id"), "comments", ["incident_id"], unique=False)
-    op.create_index(op.f("ix_comments_created_by_id"), "comments", ["created_by_id"], unique=False)
+    op.create_index(op.f("ix_comments_incident_id"),
+                    "comments", ["incident_id"], unique=False)
+    op.create_index(op.f("ix_comments_created_by_id"),
+                    "comments", ["created_by_id"], unique=False)
 
 
 def downgrade() -> None:

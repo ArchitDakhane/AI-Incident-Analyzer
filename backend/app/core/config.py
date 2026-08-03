@@ -47,7 +47,8 @@ class Settings(BaseSettings):
     UPLOAD_DIRECTORY: str = "uploads/logs"
 
     # CORS Configuration
-    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:5173", "http://localhost:3000"]
 
     @property
     def max_upload_size_bytes(self) -> int:

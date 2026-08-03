@@ -25,7 +25,8 @@ class LogFile(Base):
     file_path: Mapped[str] = mapped_column(String(500), nullable=False)
     file_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     size_bytes: Mapped[int | None] = mapped_column(nullable=True)
-    file_metadata: Mapped[str | None] = mapped_column("metadata", Text, nullable=True)
+    file_metadata: Mapped[str | None] = mapped_column(
+        "metadata", Text, nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -38,4 +39,5 @@ class LogFile(Base):
         index=True,
     )
 
-    incident: Mapped[Incident | None] = relationship(back_populates="log_files")
+    incident: Mapped[Incident | None] = relationship(
+        back_populates="log_files")

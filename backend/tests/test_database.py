@@ -7,7 +7,8 @@ from app.models import AIReport, Comment, Incident, LogFile, User  # noqa: F401
 
 def test_database_engine_is_configured() -> None:
     """The database engine should be created from the configured URL."""
-    engine = create_database_engine("postgresql://user:password@localhost:5432/test_db")
+    engine = create_database_engine(
+        "postgresql://user:password@localhost:5432/test_db")
 
     assert engine is not None
     assert engine.url.get_backend_name() == "postgresql"

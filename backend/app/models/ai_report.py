@@ -42,5 +42,6 @@ class AIReport(Base):
         index=True,
     )
 
-    incident: Mapped[Incident | None] = relationship(back_populates="ai_reports")
+    incident: Mapped[Incident | None] = relationship(
+        back_populates="ai_reports")
     created_by: Mapped[User | None] = relationship(back_populates="ai_reports")
