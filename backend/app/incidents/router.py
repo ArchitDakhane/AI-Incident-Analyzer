@@ -11,12 +11,28 @@ from sqlalchemy.orm import Session
 from app.auth.service import get_current_user
 from app.core.exceptions import AppException
 from app.database.session import get_db
-from app.incidents.ai_schemas import AIReportResponse
+from app.incidents.ai_schemas import (
+    AIReportResponse,
+    SimilarIncidentListResponse,
+    SimilarIncidentResponse,
+)
 from app.incidents.ai_service import create_ai_report
-from app.incidents.schemas import IncidentCreate, IncidentListResponse, IncidentResponse, IncidentUpdate
-from app.incidents.service import create_incident, delete_incident, get_incident, list_incidents, update_incident
+from app.incidents.schemas import (
+    IncidentCreate,
+    IncidentListResponse,
+    IncidentResponse,
+    IncidentUpdate,
+)
+from app.incidents.service import (
+    create_incident,
+    delete_incident,
+    get_incident,
+    list_incidents,
+    update_incident,
+)
 from app.incidents.upload_schemas import UploadResponse
 from app.incidents.upload_service import create_log_file, delete_incident_files
+from app.incidents.vector_service import search_similar_incidents
 from app.models.log_file import LogFile
 from app.models.user import User
 
@@ -237,8 +253,40 @@ def generate_ai_report_route(
         findings=parsed_payload.get("findings", []),
         recommended_actions=parsed_payload.get("recommended_actions", []),
         confidence_score=ai_report.confidence_score,
+        embedding_id=ai_report.embedding_id,
         created_at=ai_report.created_at.isoformat(),
         created_by_id=ai_report.created_by_id,
+    )
+
+
+@router.get("/{incident_id}/similar", response_model=SimilarIncidentListResponse)
+def get_similar_incidents_route(
+    incident_id: int,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    db: Session = Depends(get_db),
+) -> SimilarIncidentListResponse:
+    """Return the top three similar incidents based on vector search."""
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    get_current_user(db, credentials.credentials)
+    incident = get_incident(db, incident_id)
+    try:
+        results = search_similar_incidents(db, incident=incident, top_k=3)
+    except AppException as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+    return SimilarIncidentListResponse(
+        items=[
+            SimilarIncidentResponse(
+                incident_id=item["incident_id"],
+                title=item["title"],
+                similarity_score=item["similarity_score"],
+                root_cause=item["root_cause"],
+                resolution_summary=item["resolution_summary"],
+            )
+            for item in results
+        ]
     )
 
 

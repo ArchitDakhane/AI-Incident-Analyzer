@@ -25,6 +25,9 @@ class AIReport(Base):
     analysis_type: Mapped[str] = mapped_column(String(100), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     confidence_score: Mapped[float | None] = mapped_column(nullable=True)
+    embedding_id: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

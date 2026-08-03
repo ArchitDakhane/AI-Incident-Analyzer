@@ -14,6 +14,7 @@ from app.incidents.cache import (
     get_cached_ai_report,
     invalidate_ai_report_cache,
 )
+from app.incidents.vector_service import index_ai_report_embedding
 from app.models.ai_report import AIReport
 from app.models.incident import Incident
 from app.models.user import User
@@ -129,6 +130,7 @@ def create_ai_report(db: Session, *, incident: Incident, user: User | None = Non
     db.add(ai_report)
     db.commit()
     db.refresh(ai_report)
+    index_ai_report_embedding(db, incident=incident, ai_report=ai_report)
     cache_ai_report(
         incident.id,
         {
@@ -138,6 +140,7 @@ def create_ai_report(db: Session, *, incident: Incident, user: User | None = Non
             "analysis_type": ai_report.analysis_type,
             "content": ai_report.content,
             "confidence_score": ai_report.confidence_score,
+            "embedding_id": ai_report.embedding_id,
             "created_by_id": ai_report.created_by_id,
         },
     )

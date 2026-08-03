@@ -23,5 +23,22 @@ class AIReportResponse(BaseModel):
     findings: list[str]
     recommended_actions: list[str]
     confidence_score: float | None = None
+    embedding_id: str | None = None
     created_at: str
     created_by_id: int | None = None
+
+
+class SimilarIncidentResponse(BaseModel):
+    """Response payload for a similar incident search hit."""
+
+    incident_id: int
+    title: str
+    similarity_score: float
+    root_cause: str
+    resolution_summary: str
+
+
+class SimilarIncidentListResponse(BaseModel):
+    """Response payload for similar incident search results."""
+
+    items: list[SimilarIncidentResponse]
