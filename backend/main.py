@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth import router as auth_router
 from app.core import configure_logging, get_logger, settings
+from app.incidents import router as incidents_router
 
 # Configure logging before anything else
 configure_logging()
@@ -52,6 +53,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(auth_router)
+    app.include_router(incidents_router)
 
     # Health check endpoint
     @app.get("/api/health", tags=["Health"])
