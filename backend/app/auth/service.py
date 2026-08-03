@@ -29,7 +29,8 @@ def get_password_hash(password: str) -> str:
 def create_access_token(subject: str, expires_delta: timedelta | None = None) -> str:
     """Create a signed JWT access token."""
     expires = datetime.now(timezone.utc) + (
-        expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expires_delta or timedelta(
+            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     payload = {"sub": subject, "exp": expires, "token_type": "access"}
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
@@ -45,7 +46,8 @@ def create_refresh_token(subject: str) -> str:
 def decode_token(token: str) -> dict[str, Any]:
     """Decode and validate a JWT token."""
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(token, settings.SECRET_KEY,
+                             algorithms=[settings.ALGORITHM])
     except JWTError as exc:  # pragma: no cover - exercised in runtime
         raise AuthenticationException("Invalid or expired token") from exc
 
@@ -65,9 +67,11 @@ def authenticate_user(db: Session, email: str, password: str) -> User:
 
 def register_user(db: Session, *, email: str, username: str, password: str, full_name: str | None) -> User:
     """Register a new user account."""
-    existing_user = db.query(User).filter((User.email == email) | (User.username == username)).first()
+    existing_user = db.query(User).filter(
+        (User.email == email) | (User.username == username)).first()
     if existing_user:
-        raise ConflictException("A user with that email or username already exists")
+        raise ConflictException(
+            "A user with that email or username already exists")
 
     user = User(
         email=email,

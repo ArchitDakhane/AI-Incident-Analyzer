@@ -42,7 +42,8 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> AuthRes
 @router.post("/login", response_model=AuthResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
     """Authenticate a user and return auth tokens."""
-    user = authenticate_user(db, email=str(payload.email), password=payload.password)
+    user = authenticate_user(db, email=str(
+        payload.email), password=payload.password)
     access_token = create_access_token(str(user.id))
     refresh_token = create_refresh_token(str(user.id))
     return AuthResponse(
@@ -75,7 +76,8 @@ def get_profile(
 ) -> UserResponse:
     """Return the profile for the currently authenticated user."""
     if credentials is None or not credentials.scheme.lower() == "bearer":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
     user = get_current_user(db, credentials.credentials)
     return UserResponse(
