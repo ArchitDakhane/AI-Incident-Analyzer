@@ -4,6 +4,8 @@ import os
 import pytest
 
 os.environ["DEBUG"] = "False"
+os.environ["ENVIRONMENT"] = "test"
+os.environ["SECRET_KEY"] = "test-only-signing-key-not-used-outside-tests"
 
 
 @pytest.fixture(autouse=True)

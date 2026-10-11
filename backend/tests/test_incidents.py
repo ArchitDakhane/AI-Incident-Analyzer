@@ -99,3 +99,34 @@ def test_incident_crud_flow_and_pagination(client: TestClient) -> None:
     after_delete = client.get("/api/incidents", headers=headers)
     assert after_delete.status_code == 200
     assert after_delete.json()["total"] == 0
+
+
+def test_incidents_are_isolated_between_users(client: TestClient) -> None:
+    owner_token = create_user_token(client)
+    other_registration = client.post(
+        "/api/auth/register",
+        json={"email": "other@example.com",
+              "username": "other", "password": "secret123"},
+    )
+    other_token = other_registration.json()["access_token"]
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    other_headers = {"Authorization": f"Bearer {other_token}"}
+
+    incident_response = client.post(
+        "/api/incidents",
+        json={"title": "Private incident"},
+        headers=owner_headers,
+    )
+    incident_id = incident_response.json()["id"]
+
+    assert client.get(
+        f"/api/incidents/{incident_id}", headers=other_headers).status_code == 404
+    assert client.put(
+        f"/api/incidents/{incident_id}",
+        json={"status": "resolved"},
+        headers=other_headers,
+    ).status_code == 404
+    assert client.delete(
+        f"/api/incidents/{incident_id}", headers=other_headers).status_code == 404
+    assert client.get("/api/incidents",
+                      headers=other_headers).json()["total"] == 0

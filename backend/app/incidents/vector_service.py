@@ -53,9 +53,11 @@ class QdrantVectorClient:
         """Create the Qdrant collection if it does not already exist."""
         collection_url = f"{self.base_url}/collections/{self.collection_name}"
         try:
-            response = httpx.get(collection_url, headers=self.headers, timeout=10.0)
+            response = httpx.get(
+                collection_url, headers=self.headers, timeout=10.0)
         except httpx.HTTPError as exc:
-            raise ServiceException("Unable to inspect Qdrant collection") from exc
+            raise ServiceException(
+                "Unable to inspect Qdrant collection") from exc
         if response.status_code == 200:
             return
         if response.status_code != 404:
@@ -69,7 +71,8 @@ class QdrantVectorClient:
                 timeout=10.0,
             )
         except httpx.HTTPError as exc:
-            raise ServiceException("Unable to create Qdrant collection") from exc
+            raise ServiceException(
+                "Unable to create Qdrant collection") from exc
         if create_response.status_code >= 400:
             raise ServiceException("Unable to create Qdrant collection")
 
@@ -99,11 +102,18 @@ class QdrantVectorClient:
                 timeout=10.0,
             )
         except httpx.HTTPError as exc:
-            raise ServiceException("Unable to store embedding in Qdrant") from exc
+            raise ServiceException(
+                "Unable to store embedding in Qdrant") from exc
         if response.status_code >= 400:
             raise ServiceException("Unable to store embedding in Qdrant")
 
-    def search_similar(self, *, vector: list[float], limit: int) -> list[VectorSearchHit]:
+    def search_similar(
+        self,
+        *,
+        vector: list[float],
+        limit: int,
+        owner_id: int,
+    ) -> list[VectorSearchHit]:
         """Search Qdrant for the most similar incident embeddings."""
         self.ensure_collection(len(vector))
         try:
@@ -114,11 +124,17 @@ class QdrantVectorClient:
                     "vector": vector,
                     "limit": limit,
                     "with_payload": True,
+                    "filter": {
+                        "must": [
+                            {"key": "owner_id", "match": {"value": owner_id}}
+                        ]
+                    },
                 },
                 timeout=10.0,
             )
         except httpx.HTTPError as exc:
-            raise ServiceException("Unable to search similar incidents") from exc
+            raise ServiceException(
+                "Unable to search similar incidents") from exc
         if response.status_code >= 400:
             raise ServiceException("Unable to search similar incidents")
 
@@ -167,7 +183,8 @@ def generate_embedding(text: str) -> list[float]:
     try:
         values = data["embedding"]["values"]
     except (KeyError, TypeError) as exc:
-        raise ServiceException("Invalid Gemini embedding response format") from exc
+        raise ServiceException(
+            "Invalid Gemini embedding response format") from exc
 
     if not isinstance(values, list) or not values:
         raise ServiceException("Gemini returned an empty embedding")
@@ -222,6 +239,7 @@ def build_vector_payload(incident: Incident, ai_report: AIReport) -> dict[str, A
 
     return {
         "incident_id": incident.id,
+        "owner_id": incident.created_by_id,
         "ai_report_id": ai_report.id,
         "title": incident.title,
         "root_cause": root_cause or "",
@@ -270,7 +288,14 @@ def search_similar_incidents(
     ai_report = get_latest_ai_report(db, incident.id)
     query_text = build_embedding_text(incident, ai_report)
     query_vector = generate_embedding(query_text)
-    hits = get_vector_client().search_similar(vector=query_vector, limit=top_k + 1)
+    if incident.created_by_id is None:
+        return []
+
+    hits = get_vector_client().search_similar(
+        vector=query_vector,
+        limit=top_k + 1,
+        owner_id=incident.created_by_id,
+    )
 
     results: list[dict[str, Any]] = []
     seen_incident_ids: set[int] = set()
@@ -284,7 +309,14 @@ def search_similar_incidents(
         if incident_id == incident.id or incident_id in seen_incident_ids:
             continue
 
-        matched_incident = db.query(Incident).filter(Incident.id == incident_id).first()
+        matched_incident = (
+            db.query(Incident)
+            .filter(
+                Incident.id == incident_id,
+                Incident.created_by_id == incident.created_by_id,
+            )
+            .first()
+        )
         if matched_incident is None:
             continue
 

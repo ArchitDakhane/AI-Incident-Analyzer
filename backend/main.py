@@ -1,16 +1,22 @@
 """Application entry point."""
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.auth import router as auth_router
+from app.auth.service import get_current_user
 from app.core import configure_logging, get_logger, settings
+from app.core.exceptions import AppException
 from app.database.session import get_db
 from app.incidents import router as incidents_router
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.services.dashboard import get_dashboard_stats
+
+security = HTTPBearer(auto_error=False)
 
 # Configure logging before anything else
 configure_logging()
@@ -56,6 +62,13 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(RateLimitMiddleware, max_requests=60, window_seconds=60)
 
+    @app.exception_handler(AppException)
+    async def handle_app_exception(_, exc: AppException) -> JSONResponse:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.message},
+        )
+
     app.include_router(auth_router)
     app.include_router(incidents_router)
 
@@ -76,9 +89,15 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/api/dashboard/stats", tags=["Dashboard"])
-    async def dashboard_stats(db: Session = Depends(get_db)) -> dict[str, int]:
-        """Return cached dashboard statistics for the UI."""
-        return get_dashboard_stats(db)
+    async def dashboard_stats(
+        credentials: HTTPAuthorizationCredentials | None = Depends(security),
+        db: Session = Depends(get_db),
+    ) -> dict[str, int]:
+        """Return cached dashboard statistics for the authenticated user."""
+        if credentials is None:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        user = get_current_user(db, credentials.credentials)
+        return get_dashboard_stats(db, user_id=user.id)
 
     logger.info("FastAPI application created successfully")
     return app

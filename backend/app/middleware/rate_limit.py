@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Callable
 
 from fastapi import Request
@@ -25,9 +26,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         client_ip = request.client.host if request.client else "unknown"
+        route_path = re.sub(r"/\d+(?=/|$)", "/{id}", request.url.path)
         key = (
             f"ratelimit:{self.max_requests}:{self.window_seconds}:"
-            f"{client_ip}:{request.method}:{request.url.path}"
+            f"{client_ip}:{request.method}:{route_path}"
         )
         current_count = cache_service.increment(
             key, ttl_seconds=self.window_seconds)

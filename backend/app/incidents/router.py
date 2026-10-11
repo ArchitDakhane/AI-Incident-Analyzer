@@ -1,14 +1,16 @@
 """Incident routes."""
 
 import json
-import os
+from pathlib import Path
 
+import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.auth.service import get_current_user
+from app.core.config import settings
 from app.core.exceptions import AppException
 from app.database.session import get_db
 from app.incidents.ai_schemas import (
@@ -34,7 +36,6 @@ from app.incidents.upload_schemas import UploadResponse
 from app.incidents.upload_service import create_log_file, delete_incident_files
 from app.incidents.vector_service import search_similar_incidents
 from app.models.log_file import LogFile
-from app.models.user import User
 
 router = APIRouter(prefix="/api/incidents", tags=["Incidents"])
 security = HTTPBearer(auto_error=False)
@@ -82,7 +83,7 @@ def list_incidents_route(
     if credentials is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    get_current_user(db, credentials.credentials)
+    user = get_current_user(db, credentials.credentials)
     items, total = list_incidents(
         db,
         page=page,
@@ -92,6 +93,7 @@ def list_incidents_route(
         status=status,
         sort_by=sort_by,
         sort_order=sort_order,
+        created_by_id=user.id,
     )
     return IncidentListResponse(
         items=[
@@ -125,8 +127,8 @@ def get_incident_route(
     if credentials is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    get_current_user(db, credentials.credentials)
-    incident = get_incident(db, incident_id)
+    user = get_current_user(db, credentials.credentials)
+    incident = get_incident(db, incident_id, created_by_id=user.id)
     return IncidentResponse(
         id=incident.id,
         title=incident.title,
@@ -152,9 +154,13 @@ def update_incident_route(
     if credentials is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    get_current_user(db, credentials.credentials)
+    user = get_current_user(db, credentials.credentials)
     incident = update_incident(
-        db, incident_id, payload.model_dump(exclude_unset=True))
+        db,
+        incident_id,
+        payload.model_dump(exclude_unset=True),
+        created_by_id=user.id,
+    )
     return IncidentResponse(
         id=incident.id,
         title=incident.title,
@@ -180,8 +186,8 @@ def upload_log_file_route(
     if credentials is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    get_current_user(db, credentials.credentials)
-    get_incident(db, incident_id)
+    user = get_current_user(db, credentials.credentials)
+    get_incident(db, incident_id, created_by_id=user.id)
     try:
         log_file = create_log_file(db, incident_id=incident_id, file=file)
     except ValueError as exc:
@@ -191,12 +197,43 @@ def upload_log_file_route(
         id=log_file.id,
         filename=log_file.filename,
         original_filename=log_file.original_filename,
-        file_path=log_file.file_path,
         file_type=log_file.file_type,
         size_bytes=log_file.size_bytes,
         uploaded_at=log_file.uploaded_at.isoformat(),
         incident_id=log_file.incident_id,
     )
+
+
+@router.get("/{incident_id}/logs", response_model=list[UploadResponse])
+def list_incident_logs_route(
+    incident_id: int,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    db: Session = Depends(get_db),
+) -> list[UploadResponse]:
+    """List safe metadata for log files belonging to the current user's incident."""
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    user = get_current_user(db, credentials.credentials)
+    get_incident(db, incident_id, created_by_id=user.id)
+    log_files = (
+        db.query(LogFile)
+        .filter(LogFile.incident_id == incident_id)
+        .order_by(LogFile.uploaded_at.desc(), LogFile.id.desc())
+        .all()
+    )
+    return [
+        UploadResponse(
+            id=log_file.id,
+            filename=log_file.filename,
+            original_filename=log_file.original_filename,
+            file_type=log_file.file_type,
+            size_bytes=log_file.size_bytes,
+            uploaded_at=log_file.uploaded_at.isoformat(),
+            incident_id=log_file.incident_id,
+        )
+        for log_file in log_files
+    ]
 
 
 @router.get("/{incident_id}/download/{log_file_id}")
@@ -210,21 +247,25 @@ def download_log_file_route(
     if credentials is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    get_current_user(db, credentials.credentials)
-    get_incident(db, incident_id)
+    user = get_current_user(db, credentials.credentials)
+    get_incident(db, incident_id, created_by_id=user.id)
     log_file = db.query(LogFile).filter(
         LogFile.id == log_file_id, LogFile.incident_id == incident_id).first()
     if not log_file:
         raise HTTPException(status_code=404, detail="Log file not found")
-    if not os.path.exists(log_file.file_path):
+    try:
+        stored_path = Path(log_file.file_path).resolve(strict=True)
+        stored_path.relative_to(Path(settings.UPLOAD_DIRECTORY).resolve())
+    except (FileNotFoundError, OSError, ValueError):
         raise HTTPException(status_code=404, detail="File no longer exists")
 
-    return FileResponse(log_file.file_path, filename=log_file.original_filename)
+    return FileResponse(stored_path, filename=log_file.original_filename)
 
 
 @router.post("/{incident_id}/ai-report", response_model=AIReportResponse)
 def generate_ai_report_route(
     incident_id: int,
+    log_file_id: int | None = Query(default=None, gt=0),
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: Session = Depends(get_db),
 ) -> AIReportResponse:
@@ -233,14 +274,20 @@ def generate_ai_report_route(
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     user = get_current_user(db, credentials.credentials)
-    incident = get_incident(db, incident_id)
+    incident = get_incident(db, incident_id, created_by_id=user.id)
     try:
-        ai_report = create_ai_report(db, incident=incident, user=user)
+        ai_report = create_ai_report(
+            db,
+            incident=incident,
+            user=user,
+            log_file_id=log_file_id,
+        )
     except AppException as exc:
         raise HTTPException(status_code=exc.status_code,
                             detail=exc.message) from exc
-    except (ValueError, RuntimeError) as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except (httpx.HTTPError, ValueError, RuntimeError) as exc:
+        raise HTTPException(
+            status_code=503, detail="AI analysis provider failed") from exc
 
     payload = ai_report.content
     parsed_payload = json.loads(payload)
@@ -269,12 +316,13 @@ def get_similar_incidents_route(
     if credentials is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    get_current_user(db, credentials.credentials)
-    incident = get_incident(db, incident_id)
+    user = get_current_user(db, credentials.credentials)
+    incident = get_incident(db, incident_id, created_by_id=user.id)
     try:
         results = search_similar_incidents(db, incident=incident, top_k=3)
     except AppException as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+        raise HTTPException(status_code=exc.status_code,
+                            detail=exc.message) from exc
 
     return SimilarIncidentListResponse(
         items=[
@@ -300,6 +348,7 @@ def delete_incident_route(
     if credentials is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    get_current_user(db, credentials.credentials)
+    user = get_current_user(db, credentials.credentials)
+    get_incident(db, incident_id, created_by_id=user.id)
     delete_incident_files(db, incident_id)
-    delete_incident(db, incident_id)
+    delete_incident(db, incident_id, created_by_id=user.id)

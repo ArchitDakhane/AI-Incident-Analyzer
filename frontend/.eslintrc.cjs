@@ -1,4 +1,4 @@
-export default {
+module.exports = {
   parser: '@typescript-eslint/parser',
   parserOptions: {
     ecmaVersion: 2020,
@@ -14,7 +14,10 @@ export default {
     'plugin:react-hooks/recommended',
   ],
   rules: {
-    'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+    'react-refresh/only-export-components': [
+      'warn',
+      { allowConstantExport: true, allowExportNames: ['useAuth', 'useUI'] },
+    ],
     '@typescript-eslint/no-explicit-any': 'warn',
   },
   ignorePatterns: ['dist', '.eslintrc.cjs'],

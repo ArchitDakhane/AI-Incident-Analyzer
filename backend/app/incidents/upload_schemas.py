@@ -1,6 +1,6 @@
 """Schemas for log upload operations."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class UploadResponse(BaseModel):
@@ -9,7 +9,6 @@ class UploadResponse(BaseModel):
     id: int
     filename: str
     original_filename: str
-    file_path: str
     file_type: str | None = None
     size_bytes: int | None = None
     uploaded_at: str

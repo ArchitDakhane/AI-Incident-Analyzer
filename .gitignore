@@ -30,6 +30,8 @@ poetry.lock
 /backend/uploads/logs/*
 /backend/logs/*
 /backend/.env
+/backend/.pytest_cache/
+/backend/.pytest-tmp/
 
 # Frontend
 /frontend/node_modules/
@@ -57,5 +59,3 @@ logs/
 .DS_Store
 Thumbs.db
 
-# Docker
-.dockerignore

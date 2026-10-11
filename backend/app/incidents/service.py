@@ -37,17 +37,32 @@ def create_incident(db: Session, *, user: User, payload: dict[str, Any]) -> Inci
     return incident
 
 
-def get_incident(db: Session, incident_id: int) -> Incident:
-    """Fetch a single incident by id."""
-    incident = db.query(Incident).filter(Incident.id == incident_id).first()
+def get_incident(
+    db: Session,
+    incident_id: int,
+    *,
+    created_by_id: int,
+) -> Incident:
+    """Fetch an incident owned by the specified user."""
+    incident = (
+        db.query(Incident)
+        .filter(Incident.id == incident_id, Incident.created_by_id == created_by_id)
+        .first()
+    )
     if not incident:
         raise ResourceNotFoundException("incident", incident_id)
     return incident
 
 
-def update_incident(db: Session, incident_id: int, payload: dict[str, Any]) -> Incident:
+def update_incident(
+    db: Session,
+    incident_id: int,
+    payload: dict[str, Any],
+    *,
+    created_by_id: int,
+) -> Incident:
     """Update an existing incident."""
-    incident = get_incident(db, incident_id)
+    incident = get_incident(db, incident_id, created_by_id=created_by_id)
     for field in ["title", "incident_type", "severity", "status", "description", "summary"]:
         if field in payload and payload[field] is not None:
             setattr(incident, field, payload[field])
@@ -59,9 +74,14 @@ def update_incident(db: Session, incident_id: int, payload: dict[str, Any]) -> I
     return incident
 
 
-def delete_incident(db: Session, incident_id: int) -> None:
+def delete_incident(
+    db: Session,
+    incident_id: int,
+    *,
+    created_by_id: int,
+) -> None:
     """Delete an incident."""
-    incident = get_incident(db, incident_id)
+    incident = get_incident(db, incident_id, created_by_id=created_by_id)
     db.delete(incident)
     db.commit()
     invalidate_dashboard_cache()
@@ -78,9 +98,11 @@ def list_incidents(
     status: str | None = None,
     sort_by: str = "created_at",
     sort_order: str = "desc",
+    created_by_id: int,
 ) -> tuple[list[Incident], int]:
     """Return incidents with pagination, search, filtering, and sorting."""
     query = db.query(Incident)
+    query = query.filter(Incident.created_by_id == created_by_id)
 
     if search:
         search_term = f"%{search}%"

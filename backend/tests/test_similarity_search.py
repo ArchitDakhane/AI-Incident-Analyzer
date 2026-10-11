@@ -33,7 +33,13 @@ class InMemoryVectorClient:
     ) -> None:
         self.points[point_id] = {"vector": vector, "payload": payload}
 
-    def search_similar(self, *, vector: list[float], limit: int) -> list[VectorSearchHit]:
+    def search_similar(
+        self,
+        *,
+        vector: list[float],
+        limit: int,
+        owner_id: int,
+    ) -> list[VectorSearchHit]:
         hits = [
             VectorSearchHit(
                 point_id=point_id,
@@ -41,12 +47,14 @@ class InMemoryVectorClient:
                 payload=point["payload"],
             )
             for point_id, point in self.points.items()
+            if point["payload"].get("owner_id") == owner_id
         ]
         return sorted(hits, key=lambda hit: hit.score, reverse=True)[:limit]
 
     @staticmethod
     def _cosine_similarity(left: list[float], right: list[float]) -> float:
-        dot_product = sum(left_value * right_value for left_value, right_value in zip(left, right))
+        dot_product = sum(left_value * right_value for left_value,
+                          right_value in zip(left, right))
         left_length = math.sqrt(sum(value * value for value in left))
         right_length = math.sqrt(sum(value * value for value in right))
         if left_length == 0 or right_length == 0:
@@ -62,7 +70,8 @@ def client_and_db():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    TestingSessionLocal = sessionmaker(
+        bind=engine, autoflush=False, autocommit=False)
     Base.metadata.create_all(bind=engine)
 
     db = TestingSessionLocal()
@@ -154,7 +163,8 @@ def test_generate_embedding_parses_gemini_response(monkeypatch) -> None:
     def fake_post(*args, **kwargs):
         return FakeResponse()
 
-    monkeypatch.setattr("app.incidents.vector_service.settings.GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "app.incidents.vector_service.settings.GEMINI_API_KEY", "test-key")
     monkeypatch.setattr("app.incidents.vector_service.httpx.post", fake_post)
 
     assert generate_embedding("incident text") == [0.1, 0.2, 0.3]
@@ -165,9 +175,12 @@ def test_analyzed_incidents_are_indexed_and_searchable(client_and_db, monkeypatc
     client = client_and_db["client"]
     db = client_and_db["db"]
     vector_client = InMemoryVectorClient()
-    monkeypatch.setattr("app.incidents.ai_service.call_gemini_api", fake_ai_response)
-    monkeypatch.setattr("app.incidents.vector_service.generate_embedding", fake_embedding)
-    monkeypatch.setattr("app.incidents.vector_service.get_vector_client", lambda: vector_client)
+    monkeypatch.setattr(
+        "app.incidents.ai_service.call_gemini_api", fake_ai_response)
+    monkeypatch.setattr(
+        "app.incidents.vector_service.generate_embedding", fake_embedding)
+    monkeypatch.setattr(
+        "app.incidents.vector_service.get_vector_client", lambda: vector_client)
 
     token = create_user_token(client)
     headers = {"Authorization": f"Bearer {token}"}
@@ -196,7 +209,8 @@ def test_analyzed_incidents_are_indexed_and_searchable(client_and_db, monkeypatc
         assert report_response.json()["embedding_id"] is not None
 
     assert len(vector_client.points) == 4
-    assert db.query(AIReport).filter(AIReport.embedding_id.is_not(None)).count() == 4
+    assert db.query(AIReport).filter(
+        AIReport.embedding_id.is_not(None)).count() == 4
 
     similar_response = client.get(
         f"/api/incidents/{incident_ids['Database timeout']}/similar",
@@ -214,3 +228,53 @@ def test_analyzed_incidents_are_indexed_and_searchable(client_and_db, monkeypatc
         "Network timeout",
         "Authentication failure",
     }
+
+
+def test_similar_incidents_do_not_cross_user_boundaries(client_and_db, monkeypatch) -> None:
+    client = client_and_db["client"]
+    vector_client = InMemoryVectorClient()
+    monkeypatch.setattr(
+        "app.incidents.ai_service.call_gemini_api", fake_ai_response)
+    monkeypatch.setattr(
+        "app.incidents.vector_service.generate_embedding", fake_embedding)
+    monkeypatch.setattr(
+        "app.incidents.vector_service.get_vector_client", lambda: vector_client)
+
+    owner_token = create_user_token(client)
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    owner_incident = client.post(
+        "/api/incidents",
+        json={"title": "Database timeout",
+              "description": "Connection pool timed out"},
+        headers=owner_headers,
+    ).json()
+    client.post(
+        f"/api/incidents/{owner_incident['id']}/ai-report", headers=owner_headers)
+
+    other_user = client.post(
+        "/api/auth/register",
+        json={"email": "similar-other@example.com",
+              "username": "similarother", "password": "secret123"},
+    ).json()
+    other_headers = {"Authorization": f"Bearer {other_user['access_token']}"}
+    other_incident = client.post(
+        "/api/incidents",
+        json={"title": "Database lock",
+              "description": "Private other-owner incident"},
+        headers=other_headers,
+    ).json()
+    client.post(
+        f"/api/incidents/{other_incident['id']}/ai-report", headers=other_headers)
+
+    response = client.get(
+        f"/api/incidents/{owner_incident['id']}/similar",
+        headers=owner_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["items"] == []
+
+    other_response = client.get(
+        f"/api/incidents/{other_incident['id']}/similar",
+        headers=owner_headers,
+    )
+    assert other_response.status_code == 404

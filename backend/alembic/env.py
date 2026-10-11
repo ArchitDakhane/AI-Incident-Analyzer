@@ -2,14 +2,24 @@
 from app.database.base import Base
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import create_engine, pool
 
 from alembic import context
+from app.core.config import settings
 
 # this is the Alembic Config object, which provides
 # the values of the Alembic configuration directives
 # to your Python code
 config = context.config
+
+
+def get_database_url() -> str:
+    """Use an explicit Alembic override or the application's DATABASE_URL."""
+    return (
+        context.get_x_argument(as_dictionary=True).get("sqlalchemy_url")
+        or settings.DATABASE_URL
+    )
+
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -18,7 +28,7 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-from app.models import AIReport, Comment, Incident, LogFile, User  # noqa: F401
+from app.models import AIReport, Comment, Incident, LogFile, RefreshToken, User  # noqa: F401
 
 target_metadata = Base.metadata
 
@@ -35,13 +45,10 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    configuration = config.get_section(config.config_ini_section)
-    configuration["sqlalchemy.url"] = context.get_x_argument(as_dictionary=True).get(
-        "sqlalchemy_url"
-    )
+    database_url = get_database_url()
 
     with context.configure(
-        url=configuration["sqlalchemy.url"],
+        url=database_url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -58,16 +65,7 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    configuration = config.get_section(config.config_ini_section)
-    configuration["sqlalchemy.url"] = context.get_x_argument(as_dictionary=True).get(
-        "sqlalchemy_url"
-    )
-
-    connectable = engine_from_config(
-        configuration,
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    connectable = create_engine(get_database_url(), poolclass=pool.NullPool)
 
     with connectable.connect() as connection:
         context.configure(connection=connection,

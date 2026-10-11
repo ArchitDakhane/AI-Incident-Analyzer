@@ -1,6 +1,6 @@
 """Application configuration and settings management."""
-from typing import Any
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -44,11 +44,28 @@ class Settings(BaseSettings):
 
     # File Upload Configuration
     MAX_UPLOAD_SIZE_MB: int = 5
+    MAX_ANALYSIS_LOG_CHARS: int = 30000
     UPLOAD_DIRECTORY: str = "uploads/logs"
 
     # CORS Configuration
     CORS_ORIGINS: list[str] = [
         "http://localhost:5173", "http://localhost:3000"]
+
+    @model_validator(mode="after")
+    def validate_production_secret(self) -> "Settings":
+        """Reject known development secrets when configured for production."""
+        unsafe_secrets = {
+            "dev-secret-key-not-for-production-change-me",
+            "replace-with-a-long-random-secret",
+            "local-only-change-me",
+            "dev-secret-key-change-in-production",
+        }
+        if self.ENVIRONMENT.lower() == "production" and (
+            self.SECRET_KEY in unsafe_secrets or len(self.SECRET_KEY) < 32
+        ):
+            raise ValueError(
+                "SECRET_KEY must be a unique random value of at least 32 characters in production")
+        return self
 
     @property
     def max_upload_size_bytes(self) -> int:

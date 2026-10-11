@@ -1,7 +1,6 @@
 """Logging configuration for the application."""
 import logging
 import logging.config
-import sys
 from pathlib import Path
 
 from app.core.config import settings

@@ -1,7 +1,4 @@
-version: "3.9"
-
 services:
-  # PostgreSQL Database
   postgres:
     image: postgres:16-alpine
     container_name: ai-incident-analyzer-db
@@ -9,8 +6,6 @@ services:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
       POSTGRES_DB: ${DB_NAME:-ai_incident_analyzer}
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -18,16 +13,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
     networks:
       - ai-network
 
-  # Redis Cache
   redis:
     image: redis:7-alpine
     container_name: ai-incident-analyzer-redis
     command: redis-server --appendonly yes
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -35,102 +28,92 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
     networks:
       - ai-network
 
-  # Qdrant Vector Database
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.15.3
     container_name: ai-incident-analyzer-qdrant
-    ports:
-      - "6333:6333"
-      - "6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     environment:
-      QDRANT_API_KEY: ${QDRANT_API_KEY:-qdrant-key}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-local-qdrant-key}
+    restart: unless-stopped
     networks:
       - ai-network
 
-  # Backend FastAPI Application
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: ai-incident-analyzer-backend
     environment:
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-ai_incident_analyzer}
-      REDIS_URL: redis://redis:6379/0
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
-      ALGORITHM: HS256
-      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      DATABASE_URL: "${DATABASE_URL:-postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-ai_incident_analyzer}}"
+      REDIS_URL: "${REDIS_URL:-redis://redis:6379/0}"
+      SECRET_KEY: ${SECRET_KEY:-local-only-change-me}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      QDRANT_HOST: qdrant
-      QDRANT_PORT: 6333
-      QDRANT_API_KEY: ${QDRANT_API_KEY:-qdrant-key}
-      MAX_UPLOAD_SIZE_MB: 5
-      UPLOAD_DIRECTORY: uploads/logs
-      ENVIRONMENT: development
-      DEBUG: "True"
-      LOG_LEVEL: INFO
-      CORS_ORIGINS: '["http://localhost:5173","http://localhost:3000"]'
+      QDRANT_HOST: ${QDRANT_HOST:-http://qdrant}
+      QDRANT_PORT: ${QDRANT_PORT:-6333}
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-local-qdrant-key}
+      QDRANT_COLLECTION_NAME: ${QDRANT_COLLECTION_NAME:-incidents}
+      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-5}
+      UPLOAD_DIRECTORY: /app/uploads/logs
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DEBUG: ${DEBUG:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      CORS_ORIGINS: '["http://localhost:3000","http://localhost:5173"]'
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       qdrant:
-        condition: service_healthy
+        condition: service_started
     volumes:
-      - ./backend:/app
       - backend_uploads:/app/uploads
       - backend_logs:/app/logs
+    command:
+      [
+        "sh",
+        "-c",
+        "alembic -c alembic/alembic.ini upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000",
+      ]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
     networks:
       - ai-network
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-  # Frontend React Application
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api}
     container_name: ai-incident-analyzer-frontend
-    environment:
-      VITE_API_BASE_URL: http://localhost:8000/api
-      VITE_APP_NAME: AI Incident Analyzer
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
-      - backend
-    volumes:
-      - ./frontend/src:/app/src
-      - ./frontend/index.html:/app/index.html
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
     networks:
       - ai-network
 
 volumes:
   postgres_data:
-    driver: local
   redis_data:
-    driver: local
   qdrant_data:
-    driver: local
   backend_uploads:
-    driver: local
   backend_logs:
-    driver: local
 
 networks:
   ai-network:

@@ -1,13 +1,27 @@
 """Authentication routes."""
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from app.auth.schemas import AuthResponse, LoginRequest, RefreshRequest, RegisterRequest, TokenResponse, UserResponse
-from app.auth.service import authenticate_user, create_access_token, create_refresh_token, get_current_user, register_user, validate_refresh_token
+from app.auth.schemas import (
+    AuthResponse,
+    LoginRequest,
+    RefreshRequest,
+    RegisterRequest,
+    TokenResponse,
+    UserResponse,
+)
+from app.auth.service import (
+    authenticate_user,
+    create_access_token,
+    create_refresh_token,
+    get_current_user,
+    register_user,
+    revoke_refresh_token,
+    rotate_refresh_token,
+)
 from app.database.session import get_db
-from app.models.user import User
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 security = HTTPBearer(auto_error=False)
@@ -24,7 +38,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> AuthRes
         full_name=payload.full_name,
     )
     access_token = create_access_token(str(user.id))
-    refresh_token = create_refresh_token(str(user.id))
+    refresh_token = create_refresh_token(db, str(user.id))
     return AuthResponse(
         user=UserResponse(
             id=user.id,
@@ -45,7 +59,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
     user = authenticate_user(db, email=str(
         payload.email), password=payload.password)
     access_token = create_access_token(str(user.id))
-    refresh_token = create_refresh_token(str(user.id))
+    refresh_token = create_refresh_token(db, str(user.id))
     return AuthResponse(
         user=UserResponse(
             id=user.id,
@@ -63,10 +77,15 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
 @router.post("/refresh", response_model=TokenResponse)
 def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> TokenResponse:
     """Issue a new access token from a refresh token."""
-    user = validate_refresh_token(db, payload.refresh_token)
-    access_token = create_access_token(str(user.id))
-    refresh_token = create_refresh_token(str(user.id))
+    _, access_token, refresh_token = rotate_refresh_token(
+        db, payload.refresh_token)
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(payload: RefreshRequest, db: Session = Depends(get_db)) -> None:
+    """Revoke the submitted refresh token for this session."""
+    revoke_refresh_token(db, payload.refresh_token)
 
 
 @router.get("/me", response_model=UserResponse)

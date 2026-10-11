@@ -220,3 +220,22 @@ def test_generate_ai_report_handles_api_errors(client_and_db, monkeypatch) -> No
 
     assert response.status_code == 503
     assert db.query(AIReport).count() == 0
+
+
+def test_gemini_http_errors_are_sanitized(monkeypatch) -> None:
+    import httpx
+
+    def fake_post(*args, **kwargs):
+        request = httpx.Request("POST", "https://gemini.invalid")
+        response = httpx.Response(
+            429, request=request, text="quota-secret-provider-detail")
+        raise httpx.HTTPStatusError(
+            "provider failure", request=request, response=response)
+
+    monkeypatch.setattr("app.incidents.ai_service.httpx.post", fake_post)
+
+    from app.incidents.ai_service import call_gemini_api
+    from app.core.exceptions import ServiceException
+
+    with pytest.raises(ServiceException, match="Gemini provider request failed"):
+        call_gemini_api("test prompt", "unit-test-key")
